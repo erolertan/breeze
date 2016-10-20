@@ -35,6 +35,7 @@ class LBFGSB(lowerBounds: DenseVector[Double],
              maxZoomIter:Int = 64, maxLineSearchIter:Int = 64) extends FirstOrderMinimizer[DenseVector[Double], DiffFunction[DenseVector[Double]]](
       LBFGSB.defaultConvergenceCheck(lowerBounds, upperBounds, tolerance, maxIter)) with SerializableLogging {
   protected val EPS = 2.2E-16
+  protected val bound_Tol = 1.0E-8 // Bound tolerance to loosen the boundary check
 
   /**
    *
@@ -91,7 +92,7 @@ class LBFGSB(lowerBounds: DenseVector[Double],
     val DIM = x0.length
     require(lowerBounds.length == x0.length, s"Mismatch between x0 length (${x0.length}) and lowerBounds length ${lowerBounds.length}")
     require(upperBounds.length == x0.length, s"Mismatch between x0 length (${x0.length}) and upperBounds length ${upperBounds.length}")
-    require(x0.forall( (i, v) => (lowerBounds(i) <= v && v <= upperBounds(i))),
+    require(x0.forall( (i, v) => (lowerBounds(i) <= v+v.abs*bound_Tol && v-v.abs*bound_Tol <= upperBounds(i))),
           "seed is not feasible (violates lower bound or upperBounds)")
 
     History(
@@ -184,10 +185,11 @@ class LBFGSB(lowerBounds: DenseVector[Double],
   protected def findAlpha(xCauchy:DenseVector[Double], du:Vector[Double], freeVarIndex:Array[Int]) = {
     var starAlpha = 1.0
     for((vIdx, i) <- freeVarIndex.zipWithIndex) {
+      // To regularize the step size, otherwise the x goes out of bounds and procedure terminated - EE
       starAlpha = if (0 < du(i)) {
-        math.max(starAlpha, math.min(upperBounds(vIdx) - xCauchy(vIdx) / du(i), 1.0))
+        math.min(starAlpha, math.min(upperBounds(vIdx) - xCauchy(vIdx) / du(i), 1.0))
       } else {
-        math.max(starAlpha, math.min(lowerBounds(vIdx) - xCauchy(vIdx) / du(i), 1.0))
+        math.min(starAlpha, math.min(lowerBounds(vIdx) - xCauchy(vIdx) / du(i), 1.0))
       }
     }
 
